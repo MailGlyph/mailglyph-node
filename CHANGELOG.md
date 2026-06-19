@@ -17,6 +17,13 @@
 * align `campaigns.send()` response to `{ success, data, message }` with typed `data: Campaign`.
 * align `/templates` list response typing to `{ data, total, page, pageSize, totalPages }`.
 
+## [1.3.0](https://github.com/MailGlyph/mailglyph-node/compare/v1.2.0...v1.3.0) (2026-06-19)
+
+
+### Features
+
+* Email validation ([e2fd14d](https://github.com/MailGlyph/mailglyph-node/commit/e2fd14d9590dc85d6281dc95623d0c138b721bfa))
+
 ## [1.2.0](https://github.com/MailGlyph/mailglyph-node/compare/v1.1.2...v1.2.0) (2026-03-26)
 
 
