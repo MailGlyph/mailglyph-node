@@ -61,6 +61,36 @@ const verification = await client.emails.verify('user@example.com');
 console.log(verification.data.valid, verification.data.isRandomInput);
 ```
 
+## Email Verification
+
+```ts
+const result = await client.verification.validate('user@example.com');
+console.log(result.data.valid, result.data.validationMethod, result.data.creditsConsumed);
+
+const bulk = await client.verification.createBulk({
+  file: new Blob(['alice@example.com\nbob@example.com\n'], { type: 'text/csv' }),
+  filename: 'emails.csv'
+});
+
+const job = await client.verification.getBulk(bulk.data.id);
+const jobs = await client.verification.listBulk({ limit: 20, status: 'COMPLETED' });
+console.log(job.data.status, jobs.data.nextCursor);
+
+if (job.data.readyForDownload) {
+  const file = await client.verification.downloadBulk(job.data.id, {
+    filter: 'all',
+    format: 'csv'
+  });
+  console.log(file.byteLength);
+
+  await client.verification.deleteBulk(job.data.id);
+}
+
+const credits = await client.verification.getCredits();
+const ledger = await client.verification.listCreditLedger({ limit: 10 });
+console.log(credits.data.balance, ledger.data.items.length);
+```
+
 ## Events
 
 ```ts

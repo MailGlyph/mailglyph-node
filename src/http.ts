@@ -71,10 +71,14 @@ export class HttpClient {
     const timeoutMs = options.timeout ?? this.timeout;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
-      'Content-Type': 'application/json',
       'User-Agent': this.userAgent,
       ...(options.headers ?? {})
     };
+    const bodyIsFormData = isFormData(options.body);
+
+    if (!bodyIsFormData && headers['Content-Type'] === undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     let attempt = 0;
     while (attempt <= MAX_RETRIES) {
@@ -89,14 +93,14 @@ export class HttpClient {
         };
 
         if (options.body !== undefined) {
-          requestInit.body = JSON.stringify(options.body);
+          requestInit.body = bodyIsFormData ? (options.body as BodyInit) : JSON.stringify(options.body);
         }
 
         const response = await this.fetchFn(url, requestInit);
 
         clearTimeout(timeoutId);
 
-        const payload = await this.parseResponseBody(response);
+        const payload = await this.parseResponseBody(response, response.ok ? options.responseType : 'json');
 
         if (response.ok) {
           if (response.status === 204) {
@@ -173,9 +177,20 @@ export class HttpClient {
     return url.toString();
   }
 
-  private async parseResponseBody(response: Response): Promise<unknown> {
+  private async parseResponseBody(
+    response: Response,
+    responseType: RequestOptions['responseType'] = 'json'
+  ): Promise<unknown> {
     if (response.status === 204) {
       return undefined;
+    }
+
+    if (response.ok && responseType === 'arrayBuffer') {
+      return await response.arrayBuffer();
+    }
+
+    if (response.ok && responseType === 'text') {
+      return await response.text();
     }
 
     const contentType = response.headers.get('content-type') ?? '';
@@ -243,4 +258,8 @@ async function sleep(ms: number): Promise<void> {
 
 function isApiErrorPayload(value: unknown): value is ApiErrorPayload {
   return typeof value === 'object' && value !== null;
+}
+
+function isFormData(value: unknown): value is FormData {
+  return typeof FormData !== 'undefined' && value instanceof FormData;
 }

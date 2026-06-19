@@ -5,6 +5,7 @@ import { EmailsResource } from './resources/emails';
 import { EventsResource } from './resources/events';
 import { SegmentsResource } from './resources/segments';
 import { TemplatesResource } from './resources/templates';
+import { VerificationResource } from './resources/verification';
 import type { ApiKeyType, MailGlyphConfig } from './types';
 
 export class MailGlyph {
@@ -14,6 +15,7 @@ export class MailGlyph {
   public readonly campaigns: CampaignsResource;
   public readonly segments: SegmentsResource;
   public readonly templates: TemplatesResource;
+  public readonly verification: VerificationResource;
   public readonly keyType: ApiKeyType;
 
   private readonly http: HttpClient;
@@ -38,6 +40,7 @@ export class MailGlyph {
     this.campaigns = new CampaignsResource(this.http);
     this.segments = new SegmentsResource(this.http);
     this.templates = new TemplatesResource(this.http);
+    this.verification = new VerificationResource(this.http);
   }
 }
 

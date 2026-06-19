@@ -57,17 +57,133 @@ export interface VerifyEmailResponse {
   data: {
     email: string;
     valid: boolean;
+    validationMethod: 'local' | 'smtp';
+    smtpStatus?: VerificationSmtpStatus | null;
+    smtpDiagnosis?: string | null;
     isDisposable: boolean;
     isAlias: boolean;
     isTypo: boolean;
     isPlusAddressed: boolean;
     isRandomInput: boolean;
     isPersonalEmail: boolean;
+    isCatchAll: boolean;
+    isGreylisted: boolean;
     domainExists: boolean;
     hasWebsite: boolean;
     hasMxRecords: boolean;
     suggestedEmail?: string | null;
     reasons: string[];
+    creditsConsumed?: number;
+  };
+}
+
+export type VerificationSmtpStatus = 'Valid' | 'Invalid' | 'Unknown' | 'Catch All' | 'Grey-listed';
+export type BulkEmailValidationStatus =
+  | 'QUEUED'
+  | 'UPLOADING'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'ACTION_REQUIRED';
+
+export interface BulkEmailValidationJob {
+  id: string;
+  status: BulkEmailValidationStatus;
+  originalFilename: string;
+  fileSizeBytes: number;
+  localEmailCount: number;
+  reservedCredits: number;
+  confirmedEmailCount?: number | null;
+  creditUsed?: number | null;
+  valid: number;
+  invalid: number;
+  unknown: number;
+  catchall: number;
+  duplicates: number;
+  spamTrap: number;
+  toxicDomains: number;
+  readyForDownload: boolean;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  lastValidationStatus?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+}
+
+export interface CreateBulkEmailValidationParams {
+  file: Blob;
+  filename?: string;
+}
+
+export interface ListBulkEmailValidationsParams {
+  limit?: number;
+  cursor?: string;
+  search?: string;
+  status?: BulkEmailValidationStatus;
+}
+
+export interface BulkEmailValidationJobList {
+  items: BulkEmailValidationJob[];
+  nextCursor: string | null;
+}
+
+export interface BulkEmailValidationJobResponse {
+  success: boolean;
+  data: BulkEmailValidationJob;
+}
+
+export interface ListBulkEmailValidationsResponse {
+  success: boolean;
+  data: BulkEmailValidationJobList;
+}
+
+export type BulkEmailValidationDownloadFilter = 'all' | 'valid' | 'invalid' | 'unknown' | 'catchall';
+export type BulkEmailValidationDownloadFormat = 'csv' | 'xls';
+
+export interface DownloadBulkEmailValidationParams {
+  filter?: BulkEmailValidationDownloadFilter;
+  format?: BulkEmailValidationDownloadFormat;
+}
+
+export interface DeleteBulkEmailValidationResponse {
+  success: boolean;
+  data: {
+    refundedCredits: number;
+  };
+}
+
+export interface VerificationCreditsResponse {
+  success: boolean;
+  data: {
+    balance: number;
+    lowCredits: boolean;
+  };
+}
+
+export type VerificationCreditLedgerType = 'PURCHASE' | 'CONSUME' | 'REFUND' | 'ADJUSTMENT';
+
+export interface VerificationCreditLedgerEntry {
+  id: string;
+  seq: number;
+  type: VerificationCreditLedgerType;
+  creditsDelta: number;
+  balanceAfter: number;
+  source?: string | null;
+  status?: VerificationSmtpStatus | null;
+  createdAt: string;
+}
+
+export interface ListVerificationCreditLedgerParams {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ListVerificationCreditLedgerResponse {
+  success: boolean;
+  data: {
+    items: VerificationCreditLedgerEntry[];
+    nextCursor: string | null;
   };
 }
 
@@ -384,4 +500,5 @@ export interface RequestOptions {
   authMode?: 'secret' | 'public' | 'none';
   headers?: Record<string, string>;
   timeout?: number;
+  responseType?: 'json' | 'text' | 'arrayBuffer';
 }

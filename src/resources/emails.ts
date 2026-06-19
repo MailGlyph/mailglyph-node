@@ -1,8 +1,13 @@
 import { HttpClient } from '../http';
+import { VerificationResource } from './verification';
 import type { SendEmailParams, SendEmailResponse, VerifyEmailResponse } from '../types';
 
 export class EmailsResource {
-  constructor(private readonly http: HttpClient) {}
+  private readonly verification: VerificationResource;
+
+  constructor(private readonly http: HttpClient) {
+    this.verification = new VerificationResource(http);
+  }
 
   async send(params: SendEmailParams): Promise<SendEmailResponse> {
     return this.http.post<SendEmailResponse>('/v1/send', {
@@ -12,9 +17,6 @@ export class EmailsResource {
   }
 
   async verify(email: string): Promise<VerifyEmailResponse> {
-    return this.http.post<VerifyEmailResponse>('/v1/verify', {
-      body: { email },
-      authMode: 'secret'
-    });
+    return this.verification.validate(email);
   }
 }

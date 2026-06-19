@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { describe, expect, it } from 'vitest';
 
 import MailGlyph, { MailGlyphError, NotFoundError } from '../../src';
+import type { BulkEmailValidationJob } from '../../src';
 
 const secretKey = process.env.MAILGLYPH_API_KEY;
 const publicKey = process.env.MAILGLYPH_PUBLIC_KEY;
@@ -32,6 +33,7 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
       let createdContactId: string | undefined;
       let createdCampaignId: string | undefined;
       let createdSegmentId: string | undefined;
+      let createdBulkValidationId: string | undefined;
 
       try {
         await runStep('1. Email — Send', async () => {
@@ -53,7 +55,51 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
           expect(verifyResult.data.email).toBe(`test@${testDomain}`);
         });
 
-        await runStep('3. Events — Track (pk_*)', async () => {
+        await runStep('3. Verification — Credits', async () => {
+          const credits = await secretClient.verification.getCredits();
+          expect(credits.success).toBe(true);
+          expect(typeof credits.data.balance).toBe('number');
+
+          const ledger = await secretClient.verification.listCreditLedger({ limit: 5 });
+          expect(ledger.success).toBe(true);
+          expect(Array.isArray(ledger.data.items)).toBe(true);
+        });
+
+        await runStep('4. Verification — Bulk email validation', async () => {
+          const file = new Blob([`test@${testDomain}\ninfo@${testDomain}\n`], { type: 'text/csv' });
+          const created = await secretClient.verification.createBulk({
+            file,
+            filename: `sdk-bulk-validation-${uniqueId}.csv`
+          });
+          createdBulkValidationId = created.data.id;
+          expect(created.success).toBe(true);
+          expect(created.data.localEmailCount).toBeGreaterThanOrEqual(2);
+
+          const fetched = await secretClient.verification.getBulk(created.data.id);
+          expect(fetched.data.id).toBe(created.data.id);
+
+          const listed = await secretClient.verification.listBulk({ limit: 10, search: `sdk-bulk-validation-${uniqueId}` });
+          expect(listed.data.items.some((item) => item.id === created.data.id)).toBe(true);
+
+          const completed = await waitForBulkValidation(secretClient, created.data.id, 120, 2500);
+          if (completed.readyForDownload) {
+            const download = await secretClient.verification.downloadBulk(created.data.id, {
+              filter: 'all',
+              format: 'csv'
+            });
+            expect(download.byteLength).toBeGreaterThan(0);
+
+            await secretClient.verification.deleteBulk(created.data.id);
+            createdBulkValidationId = undefined;
+          } else if (isActiveBulkValidation(completed)) {
+            console.info(
+              `[cleanup] bulk validation ${created.data.id} still ${completed.status}; skipping delete because the API rejects active jobs.`
+            );
+            createdBulkValidationId = undefined;
+          }
+        });
+
+        await runStep('5. Events — Track (pk_*)', async () => {
           const trackResult = await publicClient.events.track({
             email: eventEmail,
             event: 'sdk_test_event'
@@ -62,14 +108,14 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
           expect(trackResult.success).toBe(true);
         });
 
-        await runStep('4. Events — Get Names (sk_*)', async () => {
+        await runStep('6. Events — Get Names (sk_*)', async () => {
           const eventNames = await waitForEventName(secretClient, 'sdk_test_event', 5, 500);
 
           expect(Array.isArray(eventNames)).toBe(true);
           expect(eventNames).toContain('sdk_test_event');
         });
 
-        await runStep('5. Contacts — Full CRUD lifecycle', async () => {
+        await runStep('7. Contacts — Full CRUD lifecycle', async () => {
           const created = await secretClient.contacts.create({
             email: contactEmail,
             data: { source: 'sdk-test' }
@@ -99,7 +145,7 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
           await expect(secretClient.contacts.get(created.id)).rejects.toBeInstanceOf(NotFoundError);
         });
 
-        await runStep('6. Campaigns — Full lifecycle', async () => {
+        await runStep('8. Campaigns — Full lifecycle', async () => {
           const createdCampaign = await secretClient.campaigns.create({
             name: `SDK Test Campaign ${uniqueId}`,
             subject: 'Test',
@@ -125,7 +171,7 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
           expect(typeof stats.data).toBe('object');
         });
 
-        await runStep('7. Segments — Full CRUD lifecycle', async () => {
+        await runStep('9. Segments — Full CRUD lifecycle', async () => {
           const createdSegment = await secretClient.segments.create({
             name: `SDK Test Segment ${uniqueId}`,
             condition: {
@@ -169,6 +215,10 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
           await secretClient.segments.delete(id);
         });
 
+        await cleanupResource('bulk validation', createdBulkValidationId, async (id) => {
+          await secretClient.verification.deleteBulk(id);
+        });
+
         if (createdCampaignId) {
           console.info(
             `[cleanup] campaign ${createdCampaignId} not deleted: API currently has no campaign delete endpoint.`
@@ -176,7 +226,7 @@ maybeDescribe.sequential('integration: local MailGlyph API', () => {
         }
       }
     },
-    120_000
+    360_000
   );
 });
 
@@ -189,6 +239,38 @@ async function runStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
   } catch (error) {
     throw new Error(formatStepError(step, error));
   }
+}
+
+function isActiveBulkValidation(job: BulkEmailValidationJob): boolean {
+  return job.status === 'QUEUED' || job.status === 'UPLOADING' || job.status === 'PROCESSING';
+}
+
+async function waitForBulkValidation(
+  client: MailGlyph,
+  jobId: string,
+  maxAttempts: number,
+  delayMs: number
+): Promise<BulkEmailValidationJob> {
+  let lastJob: BulkEmailValidationJob | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const result = await client.verification.getBulk(jobId);
+    lastJob = result.data;
+
+    if (lastJob.status === 'COMPLETED' || lastJob.status === 'FAILED' || lastJob.readyForDownload) {
+      return lastJob;
+    }
+
+    if (attempt < maxAttempts) {
+      await sleep(delayMs);
+    }
+  }
+
+  if (!lastJob) {
+    throw new Error(`Bulk validation job ${jobId} was not found during polling.`);
+  }
+
+  return lastJob;
 }
 
 async function waitForEventName(
